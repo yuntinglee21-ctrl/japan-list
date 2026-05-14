@@ -813,94 +813,191 @@ body { font-family: 'Noto Sans TC', sans-serif; background: var(--bg); color: va
 </div>
 
 <div class="toast" id="toast-el"></div>
-<script>
-const SK='japan_v8';
-let state={checked:{},custom:[]};
-function ls(){try{const s=localStorage.getItem(SK);if(s)state=JSON.parse(s);}catch(e){}}
-function ss(){try{localStorage.setItem(SK,JSON.stringify(state));}catch(e){}}
-ls();
-document.querySelectorAll('.card[data-id]').forEach(c=>{if(state.checked[c.dataset.id])c.classList.add('checked');});
-state.custom.forEach(i=>renderCustom(i));
-updateStats();
+<!-- Firebase SDK (CDN，不需 npm/build) -->
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getDatabase, ref, onValue, update, set, remove }
+  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
-function toggleCard(card){
-  card.classList.toggle('checked');
+// ── Firebase 設定 ──────────────────────────────────────────
+const firebaseConfig = {
+  apiKey: "AIzaSyD5Ob800XncjfravRWSkLrNFxupt96romY",
+  authDomain: "japan-list-0514.firebaseapp.com",
+  databaseURL: "https://japan-list-0514-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "japan-list-0514",
+  storageBucket: "japan-list-0514.firebasestorage.app",
+  messagingSenderId: "734441389406",
+  appId: "1:734441389406:web:a6caac7079e5116da423cf",
+  measurementId: "G-GDBNWX1RQ7"
+};
+const app = initializeApp(firebaseConfig);
+const db  = getDatabase(app);
+
+// ── Firebase 路徑 ──────────────────────────────────────────
+const checkedRef = ref(db, 'state/checked');
+const customRef  = ref(db, 'state/custom');
+
+// ── 本地快取（不寫 localStorage，只做 UI 用） ──────────────
+let localChecked = {};   // { itemId: true/false }
+let localCustom  = {};   // { itemId: {id,name,desc,cat} }
+let customRendered = new Set(); // 防止重複渲染
+
+// ── 即時監聽：checked ──────────────────────────────────────
+onValue(checkedRef, snap => {
+  localChecked = snap.val() || {};
+  // 同步所有 card 的視覺狀態
+  document.querySelectorAll('.card[data-id]').forEach(c => {
+    const id = c.dataset.id;
+    if (localChecked[id]) c.classList.add('checked');
+    else                  c.classList.remove('checked');
+  });
+  updateStats();
+});
+
+// ── 即時監聽：custom 自訂項目 ─────────────────────────────
+onValue(customRef, snap => {
+  const data = snap.val() || {};
+  localCustom = data;
+  Object.values(data).forEach(item => {
+    if (!customRendered.has(item.id)) {
+      renderCustom(item);
+      customRendered.add(item.id);
+    }
+    // 同步勾選狀態由 checkedRef 監聽處理
+  });
+  if (Object.keys(data).length > 0)
+    document.getElementById('sec-custom').style.display = '';
+  updateStats();
+});
+
+// ── 勾選 / 取消勾選 ───────────────────────────────────────
+function toggleCard(card) {
   card.classList.add('pop');
-  setTimeout(()=>card.classList.remove('pop'),250);
-  state.checked[card.dataset.id]=card.classList.contains('checked');
-  ss(); updateStats();
+  setTimeout(() => card.classList.remove('pop'), 250);
+  const id  = card.dataset.id;
+  const now = !localChecked[id];
+  localChecked[id] = now;
+  // 只寫這一個欄位，其他人的勾選不受影響
+  update(checkedRef, { [id]: now });
+  updateStats();
 }
-function toggleDetail(e,id){
+
+// ── 展開省錢明細 ──────────────────────────────────────────
+function toggleDetail(e, id) {
   e.stopPropagation();
   document.getElementById(id)?.classList.toggle('open');
-  document.getElementById('arr-'+id)?.classList.toggle('open');
+  document.getElementById('arr-' + id)?.classList.toggle('open');
 }
-function updateStats(){
-  const secs=['med','beauty','elec','snack','other','custom'];
-  let total=0,checked=0;
-  secs.forEach(k=>{
-    const cards=document.querySelectorAll('#list-'+k+' .card');
-    const c=[...cards].filter(x=>x.classList.contains('checked')).length;
-    const el=document.getElementById('cnt-'+k);
-    if(el)el.textContent=c+'/'+cards.length;
-    total+=cards.length; checked+=c;
+
+// ── 統計列 ────────────────────────────────────────────────
+function updateStats() {
+  const secs = ['med','beauty','elec','snack','other','custom'];
+  let total = 0, checked = 0;
+  secs.forEach(k => {
+    const cards = document.querySelectorAll('#list-' + k + ' .card');
+    const c = [...cards].filter(x => x.classList.contains('checked')).length;
+    const el = document.getElementById('cnt-' + k);
+    if (el) el.textContent = c + '/' + cards.length;
+    total += cards.length; checked += c;
   });
-  document.getElementById('n-checked').textContent=checked;
-  document.getElementById('n-total').textContent=total;
-  const pct=total?Math.round(checked/total*100):0;
-  document.getElementById('pbar').style.width=pct+'%';
-  document.getElementById('pct').textContent=pct+'%';
+  document.getElementById('n-checked').textContent = checked;
+  document.getElementById('n-total').textContent   = total;
+  const pct = total ? Math.round(checked / total * 100) : 0;
+  document.getElementById('pbar').style.width = pct + '%';
+  document.getElementById('pct').textContent  = pct + '%';
 }
-function toggleAdd(){
+
+// ── 新增區展開 ────────────────────────────────────────────
+function toggleAdd() {
   document.getElementById('add-form').classList.toggle('open');
   document.getElementById('add-tog').classList.toggle('open');
 }
-const CE={med:'💊',beauty:'🧴',elec:'🔌',snack:'🍪',other:'👜'};
-const CB={med:'#FFF5F7',beauty:'#FDF4FF',elec:'#F0F9FF',snack:'#F0FFF4',other:'#FFF9EE'};
-function addItem(){
-  const name=document.getElementById('new-name').value.trim();
-  if(!name){toast('❗ 請輸入商品名稱');return;}
-  const desc=document.getElementById('new-desc').value.trim();
-  const cat=document.getElementById('new-cat').value;
-  const item={id:'c'+Date.now(),name,desc,cat};
-  state.custom.push(item); ss();
-  renderCustom(item);
-  document.getElementById('new-name').value='';
-  document.getElementById('new-desc').value='';
-  document.getElementById('sec-custom').style.display='';
-  updateStats(); toast('✅ 已加入！');
+
+// ── 新增項目 ──────────────────────────────────────────────
+const CE = {med:'💊',beauty:'🧴',elec:'🔌',snack:'🍪',other:'👜'};
+const CB = {med:'#FFF5F7',beauty:'#FDF4FF',elec:'#F0F9FF',snack:'#F0FFF4',other:'#FFF9EE'};
+
+function addItem() {
+  const name = document.getElementById('new-name').value.trim();
+  if (!name) { toast('❗ 請輸入商品名稱'); return; }
+  const desc = document.getElementById('new-desc').value.trim();
+  const cat  = document.getElementById('new-cat').value;
+  const item = { id: 'c' + Date.now(), name, desc, cat };
+  // 寫入 Firebase → 觸發 onValue → renderCustom
+  update(customRef, { [item.id]: item });
+  document.getElementById('new-name').value = '';
+  document.getElementById('new-desc').value = '';
+  toast('✅ 已加入！');
 }
-function renderCustom(item){
-  document.getElementById('sec-custom').style.display='';
-  const c=document.createElement('div');
-  c.className='card'+(state.checked[item.id]?' checked':'');
-  c.dataset.id=item.id; c.dataset.sec='custom';
-  c.onclick=function(){toggleCard(this);};
-  c.innerHTML=`<div class="card-img" style="background:${CB[item.cat]||'#F4F4F4'};font-size:24px;display:flex;align-items:center;justify-content:center">${CE[item.cat]||'🛍️'}</div><div class="card-body"><div class="card-name">${esc(item.name)}</div>${item.desc?'<div class="card-desc">'+esc(item.desc)+'</div>':''}<div class="card-tags"><span class="tag">自行新增</span></div></div><div class="card-chk"></div>`;
+
+// ── 渲染自訂卡片 ──────────────────────────────────────────
+function renderCustom(item) {
+  document.getElementById('sec-custom').style.display = '';
+  const c = document.createElement('div');
+  c.className = 'card' + (localChecked[item.id] ? ' checked' : '');
+  c.dataset.id  = item.id;
+  c.dataset.sec = 'custom';
+  c.onclick = function() { toggleCard(this); };
+  c.innerHTML = `
+    <div class="card-img" style="background:${CB[item.cat]||'#F4F4F4'};font-size:24px;display:flex;align-items:center;justify-content:center">${CE[item.cat]||'🛍️'}</div>
+    <div class="card-body">
+      <div class="card-name">${esc(item.name)}</div>
+      ${item.desc ? '<div class="card-desc">' + esc(item.desc) + '</div>' : ''}
+      <div class="card-tags"><span class="tag">自行新增</span></div>
+    </div>
+    <div class="card-chk"></div>`;
   document.getElementById('list-custom').appendChild(c);
+  updateStats();
 }
-function esc(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
-function resetAll(){
-  if(!confirm('確定重置所有勾選？'))return;
-  document.querySelectorAll('.card.checked').forEach(c=>c.classList.remove('checked'));
-  state.checked={}; ss(); updateStats(); toast('🔄 已重置');
+
+function esc(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
-function copyList(){
-  const cards=document.querySelectorAll('.card:not(.checked)');
-  if(!cards.length){toast('🎉 全部購買完成！');return;}
-  const L={med:'💊 藥品',beauty:'🧴 美妝',elec:'🔌 電器',snack:'🍪 零食',other:'👜 其他',custom:'⭐ 自行新增'};
-  let secs={};
-  cards.forEach(c=>{const s=c.dataset.sec;if(!secs[s])secs[s]=[];secs[s].push('• '+c.querySelector('.card-name').textContent);});
-  let text='🇯🇵 日本購物清單（未購）\n\n';
-  Object.entries(secs).forEach(([k,v])=>{text+=(L[k]||k)+'\n'+v.join('\n')+'\n\n';});
-  navigator.clipboard.writeText(text).then(()=>toast('📋 已複製！')).catch(()=>toast('❗ 複製失敗'));
+
+// ── 重置（只清勾選，保留自訂項目） ───────────────────────
+function resetAll() {
+  if (!confirm('確定重置所有勾選？')) return;
+  document.querySelectorAll('.card.checked').forEach(c => c.classList.remove('checked'));
+  set(checkedRef, {});   // Firebase 整筆清空
+  localChecked = {};
+  updateStats();
+  toast('🔄 已重置');
 }
+
+// ── 複製未購清單 ──────────────────────────────────────────
+function copyList() {
+  const cards = document.querySelectorAll('.card:not(.checked)');
+  if (!cards.length) { toast('🎉 全部購買完成！'); return; }
+  const L = {med:'💊 藥品',beauty:'🧴 美妝',elec:'🔌 電器',snack:'🍪 零食',other:'👜 其他',custom:'⭐ 自行新增'};
+  let secs = {};
+  cards.forEach(c => {
+    const s = c.dataset.sec;
+    if (!secs[s]) secs[s] = [];
+    secs[s].push('• ' + c.querySelector('.card-name').textContent);
+  });
+  let text = '🇯🇵 日本購物清單（未購）\n\n';
+  Object.entries(secs).forEach(([k,v]) => { text += (L[k]||k) + '\n' + v.join('\n') + '\n\n'; });
+  navigator.clipboard.writeText(text)
+    .then(() => toast('📋 已複製！'))
+    .catch(() => toast('❗ 複製失敗'));
+}
+
+// ── Toast ─────────────────────────────────────────────────
 let toastT;
-function toast(msg){
-  const el=document.getElementById('toast-el');
-  el.textContent=msg; el.classList.add('show');
-  clearTimeout(toastT); toastT=setTimeout(()=>el.classList.remove('show'),2000);
+function toast(msg) {
+  const el = document.getElementById('toast-el');
+  el.textContent = msg; el.classList.add('show');
+  clearTimeout(toastT);
+  toastT = setTimeout(() => el.classList.remove('show'), 2000);
 }
+
+// ── 把需要的函式掛到 window（讓 HTML onclick= 能呼叫） ───
+window.toggleCard   = toggleCard;
+window.toggleDetail = toggleDetail;
+window.toggleAdd    = toggleAdd;
+window.addItem      = addItem;
+window.resetAll     = resetAll;
+window.copyList     = copyList;
 </script>
 </body>
 </html>
