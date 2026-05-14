@@ -141,6 +141,19 @@ body { font-family: 'Noto Sans TC', sans-serif; background: var(--bg); color: va
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 @keyframes pop { 0%{transform:scale(.85);opacity:0} 50%{transform:scale(1.08)} 100%{transform:scale(1);opacity:1} }
 .pop { animation: pop .25s ease; }
+
+/* ── LIGHTBOX ── */
+.lb-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.85); z-index: 1000; display: flex; align-items: center; justify-content: center; opacity: 0; pointer-events: none; transition: opacity .25s; padding: 24px; }
+.lb-overlay.open { opacity: 1; pointer-events: auto; }
+.lb-box { position: relative; max-width: 90vw; max-height: 80vh; display: flex; flex-direction: column; align-items: center; gap: 10px; transform: scale(.9); transition: transform .25s; }
+.lb-overlay.open .lb-box { transform: scale(1); }
+.lb-img { max-width: 100%; max-height: 70vh; object-fit: contain; border-radius: 12px; box-shadow: 0 8px 40px rgba(0,0,0,.5); display: block; }
+.lb-caption { color: rgba(255,255,255,.85); font-size: 13px; font-weight: 600; text-align: center; letter-spacing: 0.3px; }
+.lb-close { position: absolute; top: -14px; right: -14px; width: 32px; height: 32px; background: rgba(255,255,255,.18); border: none; border-radius: 50%; color: #fff; font-size: 18px; line-height: 1; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background .15s; }
+.lb-close:hover { background: rgba(255,255,255,.32); }
+.card-img { cursor: zoom-in; }
+.card-img img { transition: opacity .15s; }
+.card-img:hover img { opacity: .85; }
 </style>
 </head>
 <body>
@@ -822,6 +835,15 @@ body { font-family: 'Noto Sans TC', sans-serif; background: var(--bg); color: va
 
 <div class="toast" id="toast-el"></div>
 <!-- Firebase SDK (CDN，不需 npm/build) -->
+<!-- LIGHTBOX -->
+<div class="lb-overlay" id="lb-overlay" onclick="lbClose(event)">
+  <div class="lb-box">
+    <button class="lb-close" onclick="lbClose()">×</button>
+    <img class="lb-img" id="lb-img" src="" alt="">
+    <div class="lb-caption" id="lb-caption"></div>
+  </div>
+</div>
+
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getDatabase, ref, onValue, update, set, remove }
@@ -1083,6 +1105,44 @@ window.copyList     = copyList;
 window.previewImg   = previewImg;
 window.clearImg     = clearImg;
 window.deleteCard   = deleteCard;
+
+// ── Lightbox ─────────────────────────────────────────────
+function lbOpen(src, caption) {
+  const ov = document.getElementById('lb-overlay');
+  document.getElementById('lb-img').src = src;
+  document.getElementById('lb-caption').textContent = caption || '';
+  ov.classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+function lbClose(e) {
+  if (e && e.target !== document.getElementById('lb-overlay') && !e.target.classList.contains('lb-close')) return;
+  document.getElementById('lb-overlay').classList.remove('open');
+  document.body.style.overflow = '';
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { document.getElementById('lb-overlay').classList.remove('open'); document.body.style.overflow = ''; } });
+
+function attachLightbox(container) {
+  container.querySelectorAll('.card-img').forEach(imgWrap => {
+    const img = imgWrap.querySelector('img');
+    if (!img) return;
+    imgWrap.addEventListener('click', e => {
+      e.stopPropagation();
+      const name = imgWrap.closest('.card')?.querySelector('.card-name')?.textContent || '';
+      lbOpen(img.src, name);
+    });
+  });
+}
+// 綁定頁面上既有的所有卡片圖片
+attachLightbox(document);
+
+// 讓新增的自訂卡片也能放大（Observer 監聽 DOM 新增）
+new MutationObserver(mutations => {
+  mutations.forEach(m => m.addedNodes.forEach(n => {
+    if (n.nodeType === 1) attachLightbox(n);
+  }));
+}).observe(document.body, { childList: true, subtree: true });
+
+window.lbClose = lbClose;
 </script>
 </body>
 </html>
